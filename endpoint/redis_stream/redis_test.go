@@ -61,10 +61,10 @@ func TestRedisEndpoint(t *testing.T) {
 	router1 := endpoint.NewRouter().SetId("router1").From("device.msg.request,device.msg.response").Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		atomic.AddInt32(&count, 1)
 		if exchange.In.Headers().Get("topic") == "device.msg.response" {
-			assert.Equal(t, "{\"value\":\"this is response\"}", exchange.In.GetMsg().Data)
+			assert.Equal(t, "{\"value\":\"this is response\"}", exchange.In.GetMsg().GetData())
 			return false
 		}
-		assert.Equal(t, "{\"field1\":\"value1\",\"field2\":\"42\"}", exchange.In.GetMsg().Data)
+		assert.Equal(t, "{\"field1\":\"value1\",\"field2\":\"42\"}", exchange.In.GetMsg().GetData())
 		return true
 	}).To("chain:default").Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		// 往指定主题发送数据，用于响应
@@ -76,10 +76,10 @@ func TestRedisEndpoint(t *testing.T) {
 	router2 := endpoint.NewRouter().SetId("router1").From("device.msg.request,device.msg.response").Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		atomic.AddInt32(&count, 1)
 		if exchange.In.Headers().Get("topic") == "device.msg.response" {
-			assert.Equal(t, "{\"value\":\"this is response\"}", exchange.In.GetMsg().Data)
+			assert.Equal(t, "{\"value\":\"this is response\"}", exchange.In.GetMsg().GetData())
 			return false
 		}
-		assert.Equal(t, "{\"field1\":\"value1\",\"field2\":\"42\"}", exchange.In.GetMsg().Data)
+		assert.Equal(t, "{\"field1\":\"value1\",\"field2\":\"42\"}", exchange.In.GetMsg().GetData())
 		return true
 	}).To("chain:default").Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		// 往指定主题发送数据，用于响应

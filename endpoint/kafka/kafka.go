@@ -322,7 +322,6 @@ func (x *Kafka) Close() error {
 	// 设置关闭状态，阻止新的consumer启动和新的消息处理
 	x.closed = true
 	atomic.StoreInt32(&x.isShuttingDown, 1)
-	x.Printf("Kafka endpoint starting graceful shutdown...")
 
 	// 获取当前handlers的副本，避免在关闭过程中修改map
 	handlersToClose := make(map[string]sarama.ConsumerGroup)
@@ -332,7 +331,6 @@ func (x *Kafka) Close() error {
 	x.Unlock()
 
 	// 阶段1：停止接收新消息 - 关闭所有consumer
-	x.Printf("Kafka endpoint closing %d consumers...", len(handlersToClose))
 	for routerId, consumer := range handlersToClose {
 		if consumer != nil {
 			if err := consumer.Close(); err != nil {
@@ -342,7 +340,6 @@ func (x *Kafka) Close() error {
 	}
 
 	// 阶段2：等待活跃消息处理完成
-	x.Printf("Kafka endpoint waiting for active messages to complete...")
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -352,44 +349,30 @@ func (x *Kafka) Close() error {
 	for {
 		activeCount := atomic.LoadInt64(&x.activeMessages)
 		if activeCount == 0 {
-			x.Printf("All active messages completed")
 			break
 		}
 
 		select {
 		case <-timeout.C:
-			x.Printf("Shutdown timeout reached, forcing close with %d active messages", activeCount)
 			goto forceClose
 		case <-ticker.C:
-			x.Printf("Waiting for %d active messages to complete...", activeCount)
+			// 继续等待
 		}
 	}
 
 forceClose:
 	// 阶段3：关闭producer
 	x.Lock()
-	defer x.Unlock()
-
 	x.handlers = nil
 
+	var err error
 	if x.producer != nil {
-		x.Printf("Kafka endpoint closing producer...")
-		err := x.producer.Close()
+		err = x.producer.Close()
 		x.producer = nil
-		x.BaseEndpoint.Destroy()
-
-		// 通知关闭完成
-		select {
-		case <-x.shutdownComplete:
-			// 已经关闭
-		default:
-			close(x.shutdownComplete)
-		}
-
-		x.Printf("Kafka endpoint shutdown completed")
-		return err
 	}
+	x.Unlock()
 
+	// 在释放锁后调用BaseEndpoint.Destroy()以避免死锁
 	x.BaseEndpoint.Destroy()
 
 	// 通知关闭完成
@@ -400,8 +383,7 @@ forceClose:
 		close(x.shutdownComplete)
 	}
 
-	x.Printf("Kafka endpoint shutdown completed")
-	return nil
+	return err
 }
 
 func (x *Kafka) Id() string {
@@ -580,7 +562,6 @@ func (x *Kafka) startConsumerWithRetry(consumer sarama.ConsumerGroup, topics []s
 		_, exists := x.handlers[routerId]
 		x.Unlock()
 		if !exists {
-			x.Printf("Consumer for routerId %s topic %s has been removed, stopping", routerId, topics[0])
 			return
 		}
 		if x.closed {
@@ -588,10 +569,8 @@ func (x *Kafka) startConsumerWithRetry(consumer sarama.ConsumerGroup, topics []s
 		}
 		err := consumer.Consume(ctx, topics, handler)
 		if err != nil {
-			x.Printf("Consumer error for topic %s: %v, will retry...", topics[0], err)
 			// 如果是致命错误，重新创建消费者
 			if err == sarama.ErrClosedConsumerGroup {
-				x.Printf("Consumer group closed, recreating consumer for topic %s", topics[0])
 				// 重新创建消费者
 				config := sarama.NewConfig()
 				config.Consumer.Return.Errors = true
@@ -605,16 +584,16 @@ func (x *Kafka) startConsumerWithRetry(consumer sarama.ConsumerGroup, topics []s
 				}
 				// 更新handlers中的消费者引用
 				x.Lock()
+				oldConsumer := consumer
 				if x.handlers != nil {
-					_ = consumer.Close() // 关闭旧的消费者
 					x.handlers[routerId] = newConsumer
 					consumer = newConsumer
 				}
 				x.Unlock()
-				x.Printf("Successfully recreated consumer for topic %s", topics[0])
+				// 在释放锁后关闭旧的消费者
+				_ = oldConsumer.Close()
 			}
 		} else {
-			x.Printf("Consumer for topic %s stopped normally, retry after 5s", topics[0])
 			time.Sleep(5 * time.Second)
 		}
 	}
@@ -667,7 +646,6 @@ func (h *consumerHandler) handlerMsg(session sarama.ConsumerGroupSession, msg *s
 
 	// 检查是否正在关闭，如果是则拒绝处理新消息
 	if h.ep.IsShuttingDown() {
-		h.ep.Printf("Kafka endpoint is shutting down, rejecting message processing")
 		session.MarkMessage(msg, "") // 仍然标记消息已处理，避免重复
 		return
 	}
@@ -696,8 +674,6 @@ func (h *consumerHandler) handlerMsg(session sarama.ConsumerGroupSession, msg *s
 func (x *Kafka) BeginShutdown(ctx context.Context) error {
 	// 设置关闭状态，防止接受新的连接和消息
 	atomic.StoreInt32(&x.isShuttingDown, 1)
-
-	x.Printf("Kafka endpoint beginning graceful shutdown...")
 
 	// 不立即关闭资源，而是标记状态，让正在处理的消息完成
 	// 实际的资源关闭会在Destroy()中进行

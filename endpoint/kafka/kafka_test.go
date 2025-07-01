@@ -17,16 +17,17 @@
 package kafka
 
 import (
+	"os"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/IBM/sarama"
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
 	endpointApi "github.com/rulego/rulego/api/types/endpoint"
 	"github.com/rulego/rulego/endpoint"
 	"github.com/rulego/rulego/test/assert"
-	"os"
-	"sync"
-	"testing"
-	"time"
 )
 
 var testdataFolder = "../../testdata"
@@ -58,6 +59,16 @@ func TestKafkaEndpointInit(t *testing.T) {
 }
 
 func TestKafkaEndpoint(t *testing.T) {
+	// 检查是否有可用的 Kafka 服务器
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+
+	// 如果设置了跳过 Kafka 测试，则跳过
+	if os.Getenv("SKIP_KAFKA_TESTS") == "true" {
+		t.Skip("Skipping Kafka tests")
+	}
 
 	buf, err := os.ReadFile(testdataFolder + "/chain_msg_type_switch.json")
 	if err != nil {
@@ -69,7 +80,7 @@ func TestKafkaEndpoint(t *testing.T) {
 
 	//启动kafka接收服务
 	kafkaEndpoint, err := endpoint.Registry.New(Type, config, Config{
-		Server:  "localhost:9092",
+		Server:  kafkaBrokers,
 		GroupId: "test01",
 	})
 	//路由1
@@ -112,15 +123,16 @@ func TestKafkaEndpoint(t *testing.T) {
 	}
 
 	// 测试发布和订阅
-	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, nil)
+	brokers := []string{kafkaBrokers}
+	producer, err := sarama.NewSyncProducer(brokers, nil)
 	if err != nil {
-		t.Fatal("Failed to start Sarama producer:", err)
+		t.Skipf("Failed to start Sarama producer (Kafka may not be available): %v", err)
 	}
 	defer producer.Close()
 
-	consumer, err := sarama.NewConsumer([]string{"localhost:9092"}, nil)
+	consumer, err := sarama.NewConsumer(brokers, nil)
 	if err != nil {
-		t.Fatal("Failed to start Sarama consumer:", err)
+		t.Skipf("Failed to start Sarama consumer (Kafka may not be available): %v", err)
 	}
 	defer consumer.Close()
 	var wg sync.WaitGroup

@@ -59,7 +59,7 @@ func TestEndpoint(t *testing.T) {
 
 	// 路由1
 	router1 := endpoint.NewRouter().From(topicRequest).Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
-		assert.Equal(t, "test message", exchange.In.GetMsg().Data)
+		assert.Equal(t, "test message", exchange.In.GetMsg().GetData())
 		return true
 	}).To("chain:default").Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		// 往指定主题发送数据，用于响应
@@ -72,14 +72,14 @@ func TestEndpoint(t *testing.T) {
 	// 模拟获取响应
 	router2 := endpoint.NewRouter().SetId("router3").From(topicResponse).Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
 		//fmt.Println("接收到数据：device.msg.response", exchange.In.GetMsg())
-		assert.Equal(t, "this is response", exchange.In.GetMsg().Data)
+		assert.Equal(t, "this is response", exchange.In.GetMsg().GetData())
 		atomic.AddInt32(&count, 1)
 		return true
 	}).End()
 
 	// 模拟获取响应,相同主题
 	router3 := endpoint.NewRouter().SetId("router3").From(topicResponse).Process(func(router endpointApi.Router, exchange *endpointApi.Exchange) bool {
-		assert.Equal(t, "this is response", exchange.In.GetMsg().Data)
+		assert.Equal(t, "this is response", exchange.In.GetMsg().GetData())
 		atomic.AddInt32(&count, 1)
 		return true
 	}).End()
